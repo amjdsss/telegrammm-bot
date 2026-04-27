@@ -49,10 +49,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users.append(user_id)
         save_json(USERS_FILE, users)
 
-    settings = load_json(SETTINGS_FILE, {"start": "اهلا بك 👋"})
-    text = settings.get("start", "اهلا بك 👋")
+    settings = load_json(SETTINGS_FILE, {
+        "start": "اهلا بك 👋",
+        "plans_button": "📦 عرض الباقات"
+    })
 
-    await update.message.reply_text(text)
+    text = settings.get("start")
+    btn_text = settings.get("plans_button")
+
+    keyboard = [
+        [InlineKeyboardButton(btn_text, callback_data="show_plans")]
+    ]
+
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 # =========================
 # لوحة الأدمن
@@ -67,6 +79,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✏️ تعديل الباقات", callback_data="edit")],
         [InlineKeyboardButton("🗑 حذف باقة", callback_data="delete")],
         [InlineKeyboardButton("📝 تعديل رسالة الترحيب", callback_data="welcome")],
+        [InlineKeyboardButton("🔘 تعديل نص زر الباقات", callback_data="edit_btn")],
         [InlineKeyboardButton("📢 إذاعة", callback_data="broadcast")]
     ]
 
@@ -76,7 +89,36 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =========================
-# إضافة / تعديل / حذف
+# عرض الباقات
+# =========================
+
+async def show_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    plans = load_json(PLANS_FILE)
+
+    if not plans:
+        await query.edit_message_text("🚫 لا توجد باقات")
+        return
+
+    text = "👇 الباقات:\n\n"
+    keyboard = []
+
+    for name, info in plans.items():
+        price = info.get("price", 0)
+        days = info.get("days", 0)
+
+        text += f"{name} - {price}⭐️ - {days} يوم\n"
+        keyboard.append([InlineKeyboardButton(name, callback_data=f"buy:{name}")])
+
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+# =========================
+# Callback
 # =========================
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -93,27 +135,27 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("اسم الباقة؟")
 
     elif data == "edit":
-        plans = load_json(PLANS_FILE)
-        text = "اكتب اسم الباقة لتعديلها:"
-        await query.message.reply_text(text)
         context.user_data["step"] = "edit_name"
+        await query.message.reply_text("اكتب اسم الباقة لتعديلها:")
 
     elif data == "delete":
-        plans = load_json(PLANS_FILE)
-        text = "اكتب اسم الباقة لحذفها:"
-        await query.message.reply_text(text)
         context.user_data["step"] = "delete_name"
+        await query.message.reply_text("اكتب اسم الباقة لحذفها:")
 
     elif data == "welcome":
         context.user_data["step"] = "welcome"
         await query.message.reply_text("اكتب رسالة الترحيب الجديدة:")
 
+    elif data == "edit_btn":
+        context.user_data["step"] = "edit_btn"
+        await query.message.reply_text("اكتب النص الجديد لزر الباقات:")
+
     elif data == "broadcast":
         context.user_data["step"] = "broadcast"
-        await query.message.reply_text("اكتب الرسالة للإذاعة:")
+        await query.message.reply_text("اكتب رسالة الإذاعة:")
 
 # =========================
-# معالجة الإدخال
+# الإدخال
 # =========================
 
 async def admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -178,9 +220,19 @@ async def admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # رسالة الترحيب
     elif step == "welcome":
-        save_json(SETTINGS_FILE, {"start": text})
+        settings = load_json(SETTINGS_FILE, {})
+        settings["start"] = text
+        save_json(SETTINGS_FILE, settings)
         context.user_data.clear()
-        await update.message.reply_text("✅ تم التحديث")
+        await update.message.reply_text("✅ تم تحديث الرسالة")
+
+    # زر الباقات
+    elif step == "edit_btn":
+        settings = load_json(SETTINGS_FILE, {})
+        settings["plans_button"] = text
+        save_json(SETTINGS_FILE, settings)
+        context.user_data.clear()
+        await update.message.reply_text("✅ تم تحديث نص الزر")
 
     # إذاعة
     elif step == "broadcast":
@@ -207,7 +259,9 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_panel))
 
+    app.add_handler(CallbackQueryHandler(show_plans, pattern="show_plans"))
     app.add_handler(CallbackQueryHandler(callback_handler))
+
     app.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_IDS), admin_input))
 
     print("Bot running...")
