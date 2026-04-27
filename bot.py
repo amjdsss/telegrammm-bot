@@ -78,6 +78,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("➕ إضافة باقة", callback_data="add")],
         [InlineKeyboardButton("✏️ تعديل الباقات", callback_data="edit")],
         [InlineKeyboardButton("🗑 حذف باقة", callback_data="delete")],
+        [InlineKeyboardButton("🧨 حذف جميع الباقات", callback_data="delete_all")],
         [InlineKeyboardButton("📝 تعديل رسالة الترحيب", callback_data="welcome")],
         [InlineKeyboardButton("🔘 تعديل نص زر الباقات", callback_data="edit_btn")],
         [InlineKeyboardButton("📢 إذاعة", callback_data="broadcast")]
@@ -142,6 +143,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["step"] = "delete_name"
         await query.message.reply_text("اكتب اسم الباقة لحذفها:")
 
+    elif data == "delete_all":
+        save_json(PLANS_FILE, {})
+        await query.message.reply_text("🧨 تم حذف جميع الباقات")
+
     elif data == "welcome":
         context.user_data["step"] = "welcome"
         await query.message.reply_text("اكتب رسالة الترحيب الجديدة:")
@@ -167,7 +172,6 @@ async def admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     plans = load_json(PLANS_FILE)
 
-    # إضافة
     if step == "add_name":
         context.user_data["name"] = text
         context.user_data["step"] = "add_price"
@@ -192,7 +196,6 @@ async def admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         await update.message.reply_text("✅ تمت الإضافة")
 
-    # تعديل
     elif step == "edit_name":
         if text in plans:
             context.user_data["edit"] = text
@@ -208,7 +211,6 @@ async def admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         await update.message.reply_text("✅ تم التعديل")
 
-    # حذف
     elif step == "delete_name":
         if text in plans:
             del plans[text]
@@ -218,7 +220,6 @@ async def admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ غير موجود")
         context.user_data.clear()
 
-    # رسالة الترحيب
     elif step == "welcome":
         settings = load_json(SETTINGS_FILE, {})
         settings["start"] = text
@@ -226,7 +227,6 @@ async def admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         await update.message.reply_text("✅ تم تحديث الرسالة")
 
-    # زر الباقات
     elif step == "edit_btn":
         settings = load_json(SETTINGS_FILE, {})
         settings["plans_button"] = text
@@ -234,7 +234,6 @@ async def admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         await update.message.reply_text("✅ تم تحديث نص الزر")
 
-    # إذاعة
     elif step == "broadcast":
         users = load_json(USERS_FILE, [])
         sent = 0
