@@ -11,6 +11,7 @@ from telegram.ext import (
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+
 ADMIN_IDS = {1833251444}
 CHANNEL_ID = -1003870030895
 
@@ -19,9 +20,15 @@ USERS_FILE = "users.json"
 SETTINGS_FILE = "settings.json"
 SUBS_FILE = "subscriptions.json"
 
+# =========================
+# أدوات
+# =========================
+
 def load_json(file, default=None):
-    if default is None: default = {}
-    if not os.path.exists(file): return default
+    if default is None:
+        default = {}
+    if not os.path.exists(file):
+        return default
     try:
         with open(file, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -38,6 +45,7 @@ def is_admin(user_id):
 # =========================
 # /start
 # =========================
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
@@ -53,13 +61,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [[InlineKeyboardButton(settings["btn"], callback_data="plans")]]
 
-    await update.message.reply_text(settings["start"], reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(
+        settings["start"],
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 # =========================
 # لوحة الأدمن
 # =========================
+
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
+    if not is_admin(update.effective_user.id):
+        return
 
     keyboard = [
         [InlineKeyboardButton("➕ إضافة باقة", callback_data="add")],
@@ -71,16 +84,21 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📢 إذاعة", callback_data="broadcast")]
     ]
 
-    await update.message.reply_text("لوحة التحكم 🔧", reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(
+        "لوحة التحكم 🔧",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 # =========================
 # عرض الباقات
 # =========================
+
 async def show_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     plans = load_json(PLANS_FILE)
+
     if not plans:
         await query.edit_message_text("لا توجد باقات")
         return
@@ -97,12 +115,14 @@ async def show_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 # شراء
 # =========================
+
 async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     name = query.data.split(":")[1]
-    plan = load_json(PLANS_FILE).get(name)
+    plans = load_json(PLANS_FILE)
+    plan = plans.get(name)
 
     prices = [LabeledPrice(name, plan["price"])]
 
@@ -119,6 +139,7 @@ async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 # الدفع
 # =========================
+
 async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.pre_checkout_query.answer(ok=True)
 
@@ -135,11 +156,14 @@ async def success(update: Update, context: ContextTypes.DEFAULT_TYPE):
     subs[str(user.id)] = {"expires": expire.isoformat()}
     save_json(SUBS_FILE, subs)
 
-    await update.message.reply_text(f"🔗 {invite.invite_link}\n⏳ {expire}")
+    await update.message.reply_text(
+        f"✅ تم الدفع\n\n🔗 {invite.invite_link}\n⏳ ينتهي: {expire}"
+    )
 
 # =========================
 # الطرد التلقائي
 # =========================
+
 async def check_expired(context: ContextTypes.DEFAULT_TYPE):
     subs = load_json(SUBS_FILE, {})
     now = datetime.utcnow()
@@ -149,21 +173,25 @@ async def check_expired(context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.ban_chat_member(CHANNEL_ID, int(uid))
                 await context.bot.unban_chat_member(CHANNEL_ID, int(uid))
-            except: pass
+            except:
+                pass
             del subs[uid]
 
     save_json(SUBS_FILE, subs)
 
 # =========================
-# الأدمن
+# الإدمن (الإصلاح الكامل هنا 🔥)
 # =========================
+
 async def admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
+    if not is_admin(update.effective_user.id):
+        return
 
     step = context.user_data.get("step")
     text = update.message.text
     plans = load_json(PLANS_FILE)
 
+    # إضافة
     if step == "add_name":
         context.user_data["name"] = text
         context.user_data["step"] = "add_price"
@@ -175,19 +203,57 @@ async def admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("الأيام؟")
 
     elif step == "add_days":
-        plans[context.user_data["name"]] = {"price": context.user_data["price"], "days": int(text)}
+        plans[context.user_data["name"]] = {
+            "price": context.user_data["price"],
+            "days": int(text)
+        }
         save_json(PLANS_FILE, plans)
         context.user_data.clear()
-        await update.message.reply_text("تمت الإضافة")
+        await update.message.reply_text("✅ تمت الإضافة")
+
+    # تعديل الترحيب ✅
+    elif step == "welcome":
+        settings = load_json(SETTINGS_FILE, {})
+        settings["start"] = text
+        save_json(SETTINGS_FILE, settings)
+
+        context.user_data.clear()
+        await update.message.reply_text("✅ تم تحديث رسالة الترحيب")
+
+    # تعديل زر الباقات ✅
+    elif step == "btn":
+        settings = load_json(SETTINGS_FILE, {})
+        settings["btn"] = text
+        save_json(SETTINGS_FILE, settings)
+
+        context.user_data.clear()
+        await update.message.reply_text("✅ تم تحديث زر الباقات")
+
+    # إذاعة ✅
+    elif step == "broadcast":
+        users = load_json(USERS_FILE, [])
+        sent = 0
+
+        for uid in users:
+            try:
+                await context.bot.send_message(uid, text)
+                sent += 1
+            except:
+                pass
+
+        context.user_data.clear()
+        await update.message.reply_text(f"📢 تم الإرسال إلى {sent} مستخدم")
 
 # =========================
 # Callback
 # =========================
+
 async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if not is_admin(query.from_user.id): return
+    if not is_admin(query.from_user.id):
+        return
 
     data = query.data
 
@@ -197,20 +263,24 @@ async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "delete_all":
         save_json(PLANS_FILE, {})
-        await query.message.reply_text("تم حذف جميع الباقات")
+        await query.message.reply_text("🧨 تم حذف جميع الباقات")
 
     elif data == "welcome":
         context.user_data["step"] = "welcome"
+        await query.message.reply_text("اكتب الرسالة الجديدة")
 
     elif data == "btn":
         context.user_data["step"] = "btn"
+        await query.message.reply_text("اكتب نص الزر الجديد")
 
     elif data == "broadcast":
         context.user_data["step"] = "broadcast"
+        await query.message.reply_text("اكتب رسالة الإذاعة")
 
 # =========================
 # تشغيل
 # =========================
+
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
