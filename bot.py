@@ -1,49 +1,38 @@
 # -*- coding: utf-8 -*-
 import json
-import logging
 import os
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, PreCheckoutQueryHandler,
-    ContextTypes, filters
+    MessageHandler, ContextTypes, filters
 )
-
-# =========================
-# إعدادات
-# =========================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = {1833251444}
 
 PLANS_FILE = "plans.json"
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+USERS_FILE = "users.json"
+SETTINGS_FILE = "settings.json"
 
 # =========================
-# ملفات JSON
+# أدوات
 # =========================
 
-def load_json(filename, default=None):
+def load_json(file, default=None):
     if default is None:
         default = {}
-    if not os.path.exists(filename):
+    if not os.path.exists(file):
         return default
     try:
-        with open(filename, "r", encoding="utf-8") as f:
+        with open(file, "r", encoding="utf-8") as f:
             return json.load(f)
     except:
         return default
 
-def save_json(filename, data):
-    with open(filename, "w", encoding="utf-8") as f:
+def save_json(file, data):
+    with open(file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-
-# =========================
-# التحقق من الأدمن
-# =========================
 
 def is_admin(user_id):
     return user_id in ADMIN_IDS
@@ -53,11 +42,17 @@ def is_admin(user_id):
 # =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("📦 عرض الباقات", callback_data="plans")]]
-    await update.message.reply_text(
-        "اهلا بك 👋\nاختر باقة:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    user_id = update.effective_user.id
+
+    users = load_json(USERS_FILE, [])
+    if user_id not in users:
+        users.append(user_id)
+        save_json(USERS_FILE, users)
+
+    settings = load_json(SETTINGS_FILE, {"start": "اهلا بك 👋"})
+    text = settings.get("start", "اهلا بك 👋")
+
+    await update.message.reply_text(text)
 
 # =========================
 # لوحة الأدمن
@@ -65,137 +60,142 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("❌ أنت لست أدمن")
         return
 
     keyboard = [
-        ["➕ إضافة باقة"],
-        ["📦 عرض الباقات"]
+        [InlineKeyboardButton("➕ إضافة باقة", callback_data="add")],
+        [InlineKeyboardButton("✏️ تعديل الباقات", callback_data="edit")],
+        [InlineKeyboardButton("🗑 حذف باقة", callback_data="delete")],
+        [InlineKeyboardButton("📝 تعديل رسالة الترحيب", callback_data="welcome")],
+        [InlineKeyboardButton("📢 إذاعة", callback_data="broadcast")]
     ]
 
     await update.message.reply_text(
-        "🔧 لوحة التحكم",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("➕ إضافة باقة", callback_data="add_plan")],
-            [InlineKeyboardButton("📦 عرض الباقات", callback_data="plans")]
-        ])
-    )
-
-# =========================
-# عرض الباقات
-# =========================
-
-async def show_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    plans = load_json(PLANS_FILE)
-
-    if not plans:
-        await query.edit_message_text("🚫 لا توجد باقات")
-        return
-
-    keyboard = []
-    text = "👇 الباقات:\n\n"
-
-    for name, info in plans.items():
-        price = info.get("price", 0)
-        days = info.get("days", 0)
-
-        text += f"{name} - {price}⭐️ - {days} يوم\n"
-        keyboard.append([InlineKeyboardButton(name, callback_data=f"buy:{name}")])
-
-    await query.edit_message_text(
-        text,
+        "لوحة التحكم 🔧",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 # =========================
-# إضافة باقة (Wizard)
+# إضافة / تعديل / حذف
 # =========================
 
-async def add_plan_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     if not is_admin(query.from_user.id):
         return
 
-    context.user_data["step"] = "name"
-    await query.message.reply_text("اكتب اسم الباقة:")
+    data = query.data
 
-async def admin_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if data == "add":
+        context.user_data["step"] = "add_name"
+        await query.message.reply_text("اسم الباقة؟")
+
+    elif data == "edit":
+        plans = load_json(PLANS_FILE)
+        text = "اكتب اسم الباقة لتعديلها:"
+        await query.message.reply_text(text)
+        context.user_data["step"] = "edit_name"
+
+    elif data == "delete":
+        plans = load_json(PLANS_FILE)
+        text = "اكتب اسم الباقة لحذفها:"
+        await query.message.reply_text(text)
+        context.user_data["step"] = "delete_name"
+
+    elif data == "welcome":
+        context.user_data["step"] = "welcome"
+        await query.message.reply_text("اكتب رسالة الترحيب الجديدة:")
+
+    elif data == "broadcast":
+        context.user_data["step"] = "broadcast"
+        await query.message.reply_text("اكتب الرسالة للإذاعة:")
+
+# =========================
+# معالجة الإدخال
+# =========================
+
+async def admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return
 
     step = context.user_data.get("step")
+    text = update.message.text
 
-    if step == "name":
-        context.user_data["name"] = update.message.text
-        context.user_data["step"] = "price"
-        await update.message.reply_text("اكتب السعر:")
+    plans = load_json(PLANS_FILE)
 
-    elif step == "price":
-        context.user_data["price"] = int(update.message.text)
-        context.user_data["step"] = "days"
-        await update.message.reply_text("عدد الأيام (0 = دائم):")
+    # إضافة
+    if step == "add_name":
+        context.user_data["name"] = text
+        context.user_data["step"] = "add_price"
+        await update.message.reply_text("السعر؟")
 
-    elif step == "days":
+    elif step == "add_price":
+        context.user_data["price"] = int(text)
+        context.user_data["step"] = "add_days"
+        await update.message.reply_text("عدد الأيام؟")
+
+    elif step == "add_days":
         name = context.user_data["name"]
         price = context.user_data["price"]
-        days = int(update.message.text)
-
-        plans = load_json(PLANS_FILE)
 
         plans[name] = {
             "price": price,
-            "days": days,
+            "days": int(text),
             "description": "تمت إضافتها"
         }
 
         save_json(PLANS_FILE, plans)
+        context.user_data.clear()
+        await update.message.reply_text("✅ تمت الإضافة")
+
+    # تعديل
+    elif step == "edit_name":
+        if text in plans:
+            context.user_data["edit"] = text
+            context.user_data["step"] = "edit_price"
+            await update.message.reply_text("السعر الجديد؟")
+        else:
+            await update.message.reply_text("❌ غير موجود")
+
+    elif step == "edit_price":
+        name = context.user_data["edit"]
+        plans[name]["price"] = int(text)
+        save_json(PLANS_FILE, plans)
+        context.user_data.clear()
+        await update.message.reply_text("✅ تم التعديل")
+
+    # حذف
+    elif step == "delete_name":
+        if text in plans:
+            del plans[text]
+            save_json(PLANS_FILE, plans)
+            await update.message.reply_text("🗑 تم الحذف")
+        else:
+            await update.message.reply_text("❌ غير موجود")
+        context.user_data.clear()
+
+    # رسالة الترحيب
+    elif step == "welcome":
+        save_json(SETTINGS_FILE, {"start": text})
+        context.user_data.clear()
+        await update.message.reply_text("✅ تم التحديث")
+
+    # إذاعة
+    elif step == "broadcast":
+        users = load_json(USERS_FILE, [])
+        sent = 0
+
+        for uid in users:
+            try:
+                await context.bot.send_message(uid, text)
+                sent += 1
+            except:
+                pass
 
         context.user_data.clear()
-        await update.message.reply_text("✅ تم إضافة الباقة")
-
-# =========================
-# شراء
-# =========================
-
-async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    _, name = query.data.split(":")
-
-    plans = load_json(PLANS_FILE)
-    plan = plans.get(name)
-
-    if not plan:
-        await query.message.reply_text("❌ الباقة غير موجودة")
-        return
-
-    prices = [LabeledPrice(name, plan["price"])]
-
-    await context.bot.send_invoice(
-        chat_id=query.from_user.id,
-        title=name,
-        description="اشتراك",
-        payload=name,
-        provider_token="",
-        currency="XTR",
-        prices=prices
-    )
-
-# =========================
-# الدفع
-# =========================
-
-async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.pre_checkout_query.answer(ok=True)
-
-async def success(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ تم الدفع بنجاح")
+        await update.message.reply_text(f"📢 تم الإرسال إلى {sent} مستخدم")
 
 # =========================
 # تشغيل
@@ -207,14 +207,8 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_panel))
 
-    app.add_handler(CallbackQueryHandler(show_plans, pattern="plans"))
-    app.add_handler(CallbackQueryHandler(add_plan_start, pattern="add_plan"))
-    app.add_handler(CallbackQueryHandler(buy, pattern="buy:"))
-
-    app.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_IDS), admin_messages))
-
-    app.add_handler(PreCheckoutQueryHandler(precheckout))
-    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, success))
+    app.add_handler(CallbackQueryHandler(callback_handler))
+    app.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_IDS), admin_input))
 
     print("Bot running...")
     app.run_polling()
