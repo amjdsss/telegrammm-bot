@@ -15,14 +15,18 @@ from telegram.ext import (
     CallbackQueryHandler,
     MessageHandler,
     filters,
-    PreCheckoutQueryHandler,
-    ChatJoinRequestHandler
+    PreCheckoutQueryHandler
 )
+
+# =========================
+# CONFIG
+# =========================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 ADMIN_IDS = {1833251444}
-CHANNEL_ID = -1003815854366
+
+CHANNEL_ID = -1003870030895
 
 PLANS_FILE = "plans.json"
 USERS_FILE = "users.json"
@@ -100,40 +104,59 @@ def fmt(date):
 
 async def start(update, context):
 
-    uid = update.effective_user.id
+    try:
 
-    logger.info(f"USER_START | user={uid}")
+        if not update.message:
+            return
 
-    users = load_json(USERS_FILE, [])
+        uid = update.effective_user.id
 
-    if uid not in users:
+        logger.info(f"USER_START | user={uid}")
 
-        users.append(uid)
+        users = load_json(USERS_FILE, [])
 
-        save_json(USERS_FILE, users)
+        if uid not in users:
 
-    settings = load_json(
-        SETTINGS_FILE,
-        {
-            "start": "👋 مرحباً بك",
-            "btn": "📦 عرض الباقات",
-            "notify": "⏳ تبقى فترة قصيرة على انتهاء اشتراكك"
-        }
-    )
+            users.append(uid)
 
-    kb = [
-        [
-            InlineKeyboardButton(
-                settings["btn"],
-                callback_data="plans"
-            )
+            save_json(USERS_FILE, users)
+
+        settings = load_json(
+            SETTINGS_FILE,
+            {
+                "start": "👋 مرحباً بك",
+                "btn": "📦 عرض الباقات",
+                "notify": "⏳ تبقى فترة قصيرة على انتهاء اشتراكك"
+            }
+        )
+
+        start_text = settings.get(
+            "start",
+            "👋 مرحباً بك"
+        )
+
+        btn_text = settings.get(
+            "btn",
+            "📦 عرض الباقات"
+        )
+
+        kb = [
+            [
+                InlineKeyboardButton(
+                    btn_text,
+                    callback_data="plans"
+                )
+            ]
         ]
-    ]
 
-    await update.message.reply_text(
-        settings["start"],
-        reply_markup=InlineKeyboardMarkup(kb)
-    )
+        await update.message.reply_text(
+            start_text,
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+
+    except Exception as e:
+
+        logger.error(f"START_ERROR | {e}")
 
 
 # =========================
@@ -179,17 +202,17 @@ async def admin(update, context):
 
         [InlineKeyboardButton("🧨 حذف الكل", callback_data="delall")],
 
-        [InlineKeyboardButton("📝 تعديل الترحيب", callback_data="setwelcome")],
+        [InlineKeyboardButton("📝 تعديل رسالة الترحيب", callback_data="setwelcome")],
 
-        [InlineKeyboardButton("🔘 تعديل زر الباقات", callback_data="setbtn")],
+        [InlineKeyboardButton("🔘 تعديل نص زر الباقات", callback_data="setbtn")],
 
-        [InlineKeyboardButton("🔔 رسالة التنبيه", callback_data="setnotify")],
+        [InlineKeyboardButton("🔔 تعديل رسالة التنبيه", callback_data="setnotify")],
 
         [InlineKeyboardButton("📦 عرض الباقات", callback_data="showplans")],
 
         [InlineKeyboardButton("📢 إذاعة", callback_data="broadcast")],
 
-        [InlineKeyboardButton("📊 الإحصائيات", callback_data="stats")],
+        [InlineKeyboardButton("📊 الإحصائيات", callback_data="stats")]
     ]
 
     await update.message.reply_text(
@@ -337,9 +360,11 @@ async def ok(update, context):
             exp = datetime.fromisoformat(old["expires"])
 
             if exp > datetime.utcnow():
+
                 exp += timedelta(days=plan["days"])
 
             else:
+
                 exp = datetime.utcnow() + timedelta(days=plan["days"])
 
         else:
@@ -400,45 +425,6 @@ async def ok(update, context):
         await update.message.reply_text(
             "❌ حدث خطأ أثناء الدفع"
         )
-
-
-# =========================
-# JOIN REQUEST
-# =========================
-
-async def join(update, context):
-
-    uid = update.chat_join_request.from_user.id
-
-    subs = load_json(SUBS_FILE, {})
-
-    if str(uid) in subs:
-
-        exp = datetime.fromisoformat(
-            subs[str(uid)]["expires"]
-        )
-
-        if datetime.utcnow() < exp:
-
-            logger.info(
-                f"JOIN_APPROVED | user={uid}"
-            )
-
-            await context.bot.approve_chat_join_request(
-                CHANNEL_ID,
-                uid
-            )
-
-            return
-
-    logger.warning(
-        f"JOIN_DECLINED | user={uid}"
-    )
-
-    await context.bot.decline_chat_join_request(
-        CHANNEL_ID,
-        uid
-    )
 
 
 # =========================
@@ -593,24 +579,23 @@ async def admin_input(update, context):
 
     plans_data = load_json(PLANS_FILE)
 
-    # ADD
+    # =========================
+    # ADD PLAN
+    # =========================
+
     if step == "add_name":
 
         context.user_data["name"] = txt
 
         context.user_data["step"] = "add_price"
 
-        await update.message.reply_text(
-            "💰 السعر؟"
-        )
+        await update.message.reply_text("💰 السعر؟")
 
     elif step == "add_price":
 
         if not is_num(txt):
 
-            await update.message.reply_text(
-                "❌ اكتب رقم صحيح"
-            )
+            await update.message.reply_text("❌ اكتب رقم صحيح")
 
             return
 
@@ -618,17 +603,13 @@ async def admin_input(update, context):
 
         context.user_data["step"] = "add_days"
 
-        await update.message.reply_text(
-            "⏳ الأيام؟"
-        )
+        await update.message.reply_text("⏳ الأيام؟")
 
     elif step == "add_days":
 
         if not is_num(txt):
 
-            await update.message.reply_text(
-                "❌ اكتب رقم صحيح"
-            )
+            await update.message.reply_text("❌ اكتب رقم صحيح")
 
             return
 
@@ -636,9 +617,7 @@ async def admin_input(update, context):
 
         context.user_data["step"] = "add_desc"
 
-        await update.message.reply_text(
-            "📝 الوصف؟"
-        )
+        await update.message.reply_text("📝 الوصف؟")
 
     elif step == "add_desc":
 
@@ -660,14 +639,15 @@ async def admin_input(update, context):
             "✅ تمت إضافة الباقة"
         )
 
-    # EDIT
+    # =========================
+    # EDIT PLAN
+    # =========================
+
     elif step == "edit_price":
 
         if not is_num(txt):
 
-            await update.message.reply_text(
-                "❌ اكتب رقم صحيح"
-            )
+            await update.message.reply_text("❌ اكتب رقم صحيح")
 
             return
 
@@ -675,17 +655,13 @@ async def admin_input(update, context):
 
         context.user_data["step"] = "edit_days"
 
-        await update.message.reply_text(
-            "⏳ الأيام؟"
-        )
+        await update.message.reply_text("⏳ الأيام؟")
 
     elif step == "edit_days":
 
         if not is_num(txt):
 
-            await update.message.reply_text(
-                "❌ اكتب رقم صحيح"
-            )
+            await update.message.reply_text("❌ اكتب رقم صحيح")
 
             return
 
@@ -693,9 +669,7 @@ async def admin_input(update, context):
 
         context.user_data["step"] = "edit_desc"
 
-        await update.message.reply_text(
-            "📝 الوصف؟"
-        )
+        await update.message.reply_text("📝 الوصف؟")
 
     elif step == "edit_desc":
 
@@ -719,7 +693,10 @@ async def admin_input(update, context):
             "✅ تم تعديل الباقة"
         )
 
+    # =========================
     # SET WELCOME
+    # =========================
+
     elif step == "setwelcome":
 
         settings = load_json(SETTINGS_FILE, {})
@@ -736,7 +713,10 @@ async def admin_input(update, context):
             "✅ تم تحديث رسالة الترحيب"
         )
 
+    # =========================
     # SET BUTTON
+    # =========================
+
     elif step == "setbtn":
 
         settings = load_json(SETTINGS_FILE, {})
@@ -753,7 +733,10 @@ async def admin_input(update, context):
             "✅ تم تحديث نص زر الباقات"
         )
 
+    # =========================
     # SET NOTIFY
+    # =========================
+
     elif step == "setnotify":
 
         settings = load_json(SETTINGS_FILE, {})
@@ -770,7 +753,10 @@ async def admin_input(update, context):
             "✅ تم تحديث رسالة التنبيه"
         )
 
+    # =========================
     # BROADCAST
+    # =========================
+
     elif step == "broadcast":
 
         logger.info(
@@ -827,7 +813,10 @@ async def cb(update, context):
     ):
         return
 
+    # =========================
     # ADD
+    # =========================
+
     if q.data == "add":
 
         context.user_data["step"] = "add_name"
@@ -836,7 +825,10 @@ async def cb(update, context):
             "📦 اسم الباقة؟"
         )
 
+    # =========================
     # EDIT
+    # =========================
+
     elif q.data == "edit":
 
         if not plans_data:
@@ -878,11 +870,12 @@ async def cb(update, context):
 
         context.user_data["step"] = "edit_price"
 
-        await q.message.reply_text(
-            "💰 السعر؟"
-        )
+        await q.message.reply_text("💰 السعر؟")
 
+    # =========================
     # DELETE
+    # =========================
+
     elif q.data == "del":
 
         if not plans_data:
@@ -932,12 +925,13 @@ async def cb(update, context):
             "✅ تم حذف الباقة"
         )
 
+    # =========================
     # DELETE ALL
+    # =========================
+
     elif q.data == "delall":
 
-        logger.warning(
-            "ALL_PLANS_DELETED"
-        )
+        logger.warning("ALL_PLANS_DELETED")
 
         save_json(PLANS_FILE, {})
 
@@ -945,7 +939,10 @@ async def cb(update, context):
             "🧨 تم حذف جميع الباقات"
         )
 
+    # =========================
     # SET WELCOME
+    # =========================
+
     elif q.data == "setwelcome":
 
         context.user_data["step"] = "setwelcome"
@@ -954,7 +951,10 @@ async def cb(update, context):
             "📝 ارسل رسالة الترحيب الجديدة"
         )
 
+    # =========================
     # SET BUTTON
+    # =========================
+
     elif q.data == "setbtn":
 
         context.user_data["step"] = "setbtn"
@@ -963,7 +963,10 @@ async def cb(update, context):
             "🔘 ارسل النص الجديد للزر"
         )
 
+    # =========================
     # SET NOTIFY
+    # =========================
+
     elif q.data == "setnotify":
 
         context.user_data["step"] = "setnotify"
@@ -972,7 +975,10 @@ async def cb(update, context):
             "🔔 ارسل رسالة التنبيه الجديدة"
         )
 
-    # SHOW
+    # =========================
+    # SHOW PLANS
+    # =========================
+
     elif q.data == "showplans":
 
         if not plans_data:
@@ -995,7 +1001,10 @@ async def cb(update, context):
 
         await q.message.reply_text(text)
 
+    # =========================
     # BROADCAST
+    # =========================
+
     elif q.data == "broadcast":
 
         context.user_data["step"] = "broadcast"
@@ -1004,7 +1013,10 @@ async def cb(update, context):
             "📢 ارسل الرسالة"
         )
 
+    # =========================
     # STATS
+    # =========================
+
     elif q.data == "stats":
 
         stats = load_json(
@@ -1034,7 +1046,10 @@ async def cb(update, context):
             f"🔥 الأكثر مبيعاً: {best}"
         )
 
+    # =========================
     # BACK
+    # =========================
+
     elif q.data == "back_user":
 
         await q.message.delete()
@@ -1074,7 +1089,7 @@ def main():
 
     app.add_handler(
         MessageHandler(
-            filters.TEXT & filters.User(ADMIN_IDS),
+            filters.TEXT & ~filters.COMMAND & filters.User(ADMIN_IDS),
             admin_input
         )
     )
@@ -1090,10 +1105,6 @@ def main():
         )
     )
 
-    app.add_handler(
-        ChatJoinRequestHandler(join)
-    )
-
     app.job_queue.run_repeating(
         check,
         interval=3600
@@ -1103,6 +1114,8 @@ def main():
         reset,
         interval=86400
     )
+
+    print("BOT STARTED")
 
     app.run_polling()
 
